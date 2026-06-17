@@ -1,0 +1,164 @@
+"""
+Enterprise Automated Support Ticket Classification & Priority Routing System
+Engineered with Scikit-Learn and Text Preprocessing Pipelines
+Language: Python 3.x
+"""
+
+import re
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.svm import LinearSVC
+from sklearn.metrics import classification_report, confusion_matrix
+
+# =====================================================================
+# PHASE 1: DATA SIMULATION PIPELINE
+# =====================================================================
+def generate_raw_support_tickets():
+    print("[SYSTEM] Phase 1: Ingesting Raw Historical Customer Support Tickets...")
+    
+    # Raw real-world support ticket templates with diverse vocabulary
+    ticket_data = [
+        # Billing & Payment
+        ("My credit card was charged twice for the monthly subscription! Reverse it.", "Billing", 1),
+        ("I need a refund for the transaction from yesterday. The service didn't work.", "Billing", 0),
+        ("Where can I download the invoice for last month's platform fees?", "Billing", 0),
+        ("My payment keeps failing at checkout with error code 403. Help!", "Billing", 1),
+        
+        # Technical Support
+        ("The website is completely down. I am getting a 500 internal server error.", "Technical", 1),
+        ("The mobile app keeps crashing every time I try to open the camera tab.", "Technical", 0),
+        ("API requests are returning slow responses, taking over 10 seconds to load.", "Technical", 1),
+        ("I cannot connect to the server database from my local development framework.", "Technical", 0),
+        
+        # Account Management
+        ("I forgot my password and the reset email link is expired or broken.", "Account", 1),
+        ("Please delete my personal data and deactivate this account permanently.", "Account", 0),
+        ("How can I update my primary email address and update phone information?", "Account", 0),
+        ("My profile says suspended. I have no idea why my access was locked.", "Account", 1)
+    ]
+    
+    # Duplicate records synthetically to provide enough base samples for training partitions
+    duplicated_data = ticket_data * 15
+    
+    df = pd.DataFrame(duplicated_data, columns=["Ticket_Text", "Category", "Is_Urgent_Metadata"])
+    print(f"[SUCCESS] Dataset successfully simulated. Total tickets processed: {len(df)}")
+    return df
+
+# =====================================================================
+# PHASE 2: TEXT PREPROCESSING & CLEANING PIPELINE
+# =====================================================================
+def clean_and_tokenize(text):
+    # Convert incoming string characters to lowercase
+    text = text.lower()
+    # Strip away special punctuation configurations and numeric digits
+    text = re.sub(r'[^a-zA-Z\s]', '', text)
+    # Strip unnecessary trailing whitespace characters
+    text = text.strip()
+    return text
+
+def preprocess_dataset(df):
+    print("[SYSTEM] Phase 2: Commencing Text Preprocessing Pipeline...")
+    df['Cleaned_Text'] = df['Ticket_Text'].apply(clean_and_tokenize)
+    
+    # Simple explicit tokenization verification snapshot
+    sample_tokens = df['Cleaned_Text'].iloc[0].split()
+    print(f"[SUCCESS] Text tokenized. Verification Sample: {sample_tokens}")
+    return df
+
+# =====================================================================
+# PHASE 3: MODEL EXTRACTION, SPLITTING, & VECTORIZATION
+# =====================================================================
+def build_and_train_classifier(df):
+    print("[SYSTEM] Phase 3: Spliting and Vectorizing Text Blocks via TF-IDF...")
+    
+    X = df['Cleaned_Text']
+    y = df['Category']
+    
+    # Split chronologically/stratified into training and target validation holdouts
+    X_train, X_test, y_train, y_test, idx_train, idx_test = train_test_split(
+        X, y, df.index, test_size=0.25, random_state=42, stratify=y
+    )
+    
+    # Convert unstructured cleaned text tokens to high-density numerical TF-IDF features
+    vectorizer = TfidfVectorizer(ngram_range=(1, 2), max_features=500)
+    X_train_tfidf = vectorizer.fit_transform(X_train)
+    X_test_tfidf = vectorizer.transform(X_test)
+    
+    print("[SYSTEM] Phase 4: Optimizing Linear Support Vector Machine (SVM) Classifier...")
+    # LinearSVC handles short text categorization with strong boundary accuracy
+    classifier = LinearSVC(random_state=42, C=1.0)
+    classifier.fit(X_train_tfidf, y_train)
+    
+    print("[SUCCESS] Machine learning text classifier trained.")
+    return classifier, vectorizer, X_test_tfidf, y_test, idx_test
+
+# =====================================================================
+# PHASE 4: PRIORITY ROUTING LOGIC ENGINE
+# =====================================================================
+def assign_priority_level(category_pred, is_urgent_meta):
+    """
+    Business Logic Matrix Routing Table:
+    Combines NLP classification outputs with explicit metadata flags (e.g., system downtime indicators)
+    """
+    if category_pred == "Technical" and is_urgent_meta == 1:
+        return "High"
+    elif category_pred == "Billing" and is_urgent_meta == 1:
+        return "High"
+    elif category_pred == "Account" and is_urgent_meta == 1:
+        return "Medium"
+    else:
+        return "Low"
+
+# =====================================================================
+# PHASE 5: PRODUCTION SYSTEM WRAPPER & EVALUATION
+# =====================================================================
+def evaluate_system_performance(df, classifier, vectorizer, X_test_tfidf, y_test, idx_test):
+    print("[SYSTEM] Phase 5: Assessing Classification & Priority Matrix Quality...")
+    
+    # Predict ticket categories using the trained model
+    category_predictions = classifier.predict(X_test_tfidf)
+    
+    # Reconstruct the test dataframe block to safely isolate metrics without leaks
+    test_results = df.loc[idx_test].copy()
+    test_results['Predicted_Category'] = category_predictions
+    
+    # Map raw entries across the operational priority assignment routing matrix
+    test_results['Assigned_Priority'] = test_results.apply(
+        lambda row: assign_priority_level(row['Predicted_Category'], row['Is_Urgent_Metadata']), axis=1
+    )
+    
+    # Calculate performance evaluation matrices
+    print("\n" + "="*60)
+    print("             NLP CATEGORY CLASSIFICATION REPORT             ")
+    print("="*60)
+    print(classification_report(y_test, category_predictions))
+    print("="*60)
+    
+    print("\n" + "="*60)
+    print("             PRIORITY DISTRIBUTION INSIGHTS                 ")
+    print("="*60)
+    print(test_results['Assigned_Priority'].value_counts())
+    print("="*60 + "\n")
+    
+    return test_results
+
+# =====================================================================
+# MAIN RUN LIFECYCLE EXECUTION CONTROLLER
+# =====================================================================
+if __name__ == "__main__":
+    # Run the end-to-end support automation pipeline
+    raw_df = generate_raw_support_tickets()
+    preprocessed_df = preprocess_dataset(raw_df)
+    
+    model, tfidf_engine, X_test_vectorized, y_validation, test_indices = build_and_train_classifier(preprocessed_df)
+    
+    final_output_manifest = evaluate_system_performance(
+        preprocessed_df, model, tfidf_engine, X_test_vectorized, y_validation, test_indices
+    )
+    
+    # Preview a live routing sample output inside the console interface
+    print("[SAMPLE OUTPUT] Live Ticket Routing Visualization Preview:")
+    print(final_output_manifest[['Ticket_Text', 'Predicted_Category', 'Assigned_Priority']].head(5))
+    print("\n[COMPLETE] System lifecycle successfully completed execution.")
